@@ -30,6 +30,20 @@ Aniyomi / Tachiyomi
   Aniyomi/Tachiyomi and retain their original Apache-2.0 headers. The full
   Apache License 2.0 text is included as LICENSE-Apache-2.0.txt.
 
+flutter_tts (Dawit Gray / eyedeadevelopment.com)
+  https://pub.dev/packages/flutter_tts
+  License: MIT
+  Read-aloud in the novel reader speaks through the OS speech engine via this
+  plugin (Android TextToSpeech / iOS AVSpeech). No extra app permission.
+
+Reikai (unseensnick)
+  https://github.com/unseensnick/Reikai
+  License: GPL-3.0 (same as this project)
+  The read-aloud UX (paragraph-by-paragraph speech, floating puck, rate/pitch/
+  voice settings, auto-read-next-chapter) is modeled on Reikai's novel-reader
+  TTS. No Reikai code is used — this is a clean-room Dart reimplementation
+  against flutter_tts.
+
 Other dependencies (Flutter/Dart packages and Android libraries) are used under
 their respective open-source licenses; refer to each package for details.
 

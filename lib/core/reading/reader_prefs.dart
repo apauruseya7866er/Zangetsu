@@ -290,4 +290,65 @@ class ReaderPrefs {
       _box.get('textDirection', defaultValue: 'auto') as String;
   Future<void> setTextDirection(String value) =>
       _box.put('textDirection', value);
+
+  // ── Read aloud (TTS, novel reader) ────────────────────────────────────
+  /// Speech rate multiplier. 1.0 is the engine default; clamped to the
+  /// 0.1–3.0 range Reikai exposes for the same setting.
+  double get ttsRate =>
+      (_box.get('ttsRate', defaultValue: 1.0) as num).toDouble().clamp(0.1, 3.0);
+  Future<void> setTtsRate(double value) =>
+      _box.put('ttsRate', value.clamp(0.1, 3.0));
+
+  /// Voice pitch multiplier. 1.0 is the engine default.
+  double get ttsPitch =>
+      (_box.get('ttsPitch', defaultValue: 1.0) as num).toDouble().clamp(0.1, 2.0);
+  Future<void> setTtsPitch(double value) =>
+      _box.put('ttsPitch', value.clamp(0.1, 2.0));
+
+  /// BCP-47 language tag (e.g. 'en-US'). Empty means the engine default —
+  /// never write a guess here, or every chapter reads in the wrong accent.
+  String get ttsLanguage => _box.get('ttsLanguage', defaultValue: '') as String;
+  Future<void> setTtsLanguage(String value) => _box.put('ttsLanguage', value);
+
+  /// Voice name as reported by the engine. Empty means the engine default.
+  /// Stored together with [ttsVoiceLocale]: names alone are not unique
+  /// across locales on some engines.
+  String get ttsVoice => _box.get('ttsVoice', defaultValue: '') as String;
+  String get ttsVoiceLocale =>
+      _box.get('ttsVoiceLocale', defaultValue: '') as String;
+  Future<void> setTtsVoice(String name, String locale) async {
+    await _box.put('ttsVoice', name);
+    await _box.put('ttsVoiceLocale', locale);
+  }
+
+  /// Android TTS engine package (e.g. com.google.android.tts). Empty means
+  /// the system default. Ignored on iOS.
+  String get ttsEngine => _box.get('ttsEngine', defaultValue: '') as String;
+  Future<void> setTtsEngine(String value) => _box.put('ttsEngine', value);
+
+  /// When the last paragraph finishes, open the next chapter and keep
+  /// reading — the novel analogue of autoplay. Off by default: silently
+  /// advancing chapters is surprising until asked for.
+  bool get ttsAutoAdvance =>
+      _box.get('ttsAutoAdvance', defaultValue: false) as bool;
+  Future<void> setTtsAutoAdvance(bool value) =>
+      _box.put('ttsAutoAdvance', value);
+
+  /// Scroll the page so it follows the paragraph being read. On by default.
+  bool get ttsFollowScroll =>
+      _box.get('ttsFollowScroll', defaultValue: true) as bool;
+  Future<void> setTtsFollowScroll(bool value) =>
+      _box.put('ttsFollowScroll', value);
+
+  /// Where the floating read-aloud button sits, as a fraction of the screen
+  /// (same scheme as the auto-scroll button). Defaults above the bottom
+  /// chrome on the right, clear of the auto-scroll puck's own default spot.
+  double get ttsButtonX =>
+      (_box.get('ttsButtonX', defaultValue: 0.88) as num).toDouble();
+  double get ttsButtonY =>
+      (_box.get('ttsButtonY', defaultValue: 0.60) as num).toDouble();
+  Future<void> setTtsButtonPos(double x, double y) async {
+    await _box.put('ttsButtonX', x);
+    await _box.put('ttsButtonY', y);
+  }
 }

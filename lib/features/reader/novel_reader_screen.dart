@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 
 import '../../core/di/injector.dart';
 import '../../core/models/episode.dart';
 import '../../core/reading/chapter_nav.dart';
+import '../../core/tts/novel_tts_controller.dart';
 import '../../core/models/page_content.dart';
 import '../../core/models/provider_info.dart';
 import '../../core/reading/read_history.dart';
@@ -16,6 +19,7 @@ import '../../core/theme/app_text.dart';
 import '../../core/tracker/tracker.dart';
 import '../../core/tracker/tracker_hub.dart';
 import 'novel_paginator.dart';
+import 'novel_tts_ui.dart';
 import 'reader_chrome.dart';
 import 'reader_auto_scroll.dart';
 import 'reader_auto_scroll_ui.dart';
@@ -75,6 +79,14 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
     with ReaderComfortMixin<NovelReaderScreen>, TickerProviderStateMixin {
   /// Hands-free scrolling — scroll mode only; paged mode turns whole pages.
   late final ReaderAutoScroll _autoScroll;
+  // Read-aloud (TTS) — novel only, like Reikai: the OS speech engine walks
+  // the chapter paragraph by paragraph. Per-screen (a State survives
+  // rotation), stopped on chapter change and dispose.
+  late final NovelTtsController _tts;
+  // Last TTS paragraph index follow-scroll moved for — the controller fires
+  // on state changes too, and re-animating to the same spot would fight the
+  // user's own scrolling.
+  int _ttsFollowedIndex = -1;
   late int _index;
   // Mutable so a Continue Reading resume (opened with just the one chapter)
   // can widen to the show's full list in the background — see
@@ -123,6 +135,10 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
     // access — which, if auto-scroll was never used, is dispose(), where
     // the element is already deactivated and the lookup throws.
     _autoScroll = ReaderAutoScroll(vsync: this);
+    _tts = NovelTtsController(
+      prefs: sl<ReaderPrefs>(),
+      onChapterEnd: _ttsAutoNext,
+    )..addListener(_onTtsTick);
     // Wakelock/brightness/orientation — see ReaderComfortMixin. The novel
     // reader never held a wakelock before this; it now does, same as manga.
     applyReaderComfort();
@@ -133,6 +149,8 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
   @override
   void dispose() {
     _flushProgress(); // reader close: don't lose the last-read position
+    _tts.removeListener(_onTtsTick);
+    _tts.dispose(); // stops the engine — no speech after the reader is gone
     _autoScroll.dispose();
     restoreReaderComfort();
     _scrollController.removeListener(_onScroll);
@@ -190,9 +208,15 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
         _text = text;
         _loading = false;
       });
+      // Hand the fresh HTML to TTS (auto-starts only when an auto-advance
+      // armed it — a manual open just loads and stays stopped).
+      _tts.setSource(html: text.html);
+      _ttsFollowedIndex = -1;
       _restoreScrollPosition();
     } catch (_) {
       if (!mounted) return;
+      // A failed next chapter must not leave a stale auto-start armed.
+      _tts.cancelAutoStart();
       setState(() {
         _error = "Couldn't load this chapter.";
         _loading = false;
@@ -395,8 +419,11 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
 
   void _goToChapter(int? newIndex) {
     // See the manga reader: a live auto-scroll must not survive into a chapter
-    // that hasn't laid out yet.
+    // that hasn't laid out yet. Same for a live voice — and note this runs
+    // BEFORE the auto-advance arm is consumed, so stop() deliberately leaves
+    // that flag alone (setSource consumes it, cancelAutoStart clears it).
     _autoScroll.stop();
+    _tts.stop();
     if (newIndex == null || newIndex < 0 || newIndex >= _chapters.length) {
       return;
     }
@@ -416,6 +443,56 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
       _pageIndex = 0;
     });
     _load();
+  }
+
+  /// Fired by the TTS controller when the last paragraph finishes while
+  /// auto-advance is on — the same chapter change the next button uses, so
+  /// progress saving, scrobbling and auto-start all flow through one path.
+  void _ttsAutoNext() => _goToChapter(_nextIndex);
+
+  /// Bottom-bar read-aloud toggle. Starting it stops auto-scroll first: the
+  /// two hands-free modes must never run together (same rule as chapter
+  /// change, which stops both).
+  void _toggleTts() {
+    if (_text == null) return;
+    if (!_tts.isActive) _autoScroll.stop();
+    _tts.toggle();
+  }
+
+  /// Follow-scroll: while TTS plays, keep the page moving with the voice.
+  /// Scroll mode animates to the character-weighted progress; paged mode
+  /// jumps to the matching page. Only runs on paragraph changes while the
+  /// follow-scroll pref is on.
+  void _onTtsTick() {
+    if (!mounted || _text == null || !_tts.hasContent) return;
+    if (!_tts.isPlaying || !sl<ReaderPrefs>().ttsFollowScroll) return;
+    if (_tts.index == _ttsFollowedIndex) return;
+    _ttsFollowedIndex = _tts.index;
+    final target = _tts.progress01;
+    if (sl<ReaderPrefs>().novelPaginated) {
+      if (_pages.length > 1 && _pageController.hasClients) {
+        final page = (target * (_pages.length - 1)).round().clamp(
+          0,
+          _pages.length - 1,
+        );
+        if (page != _pageIndex) {
+          setState(() => _pageIndex = page);
+          _pageController.jumpToPage(page);
+        }
+      }
+      return;
+    }
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.maxScrollExtent <= 0) return;
+    _scrollController.animateTo(
+      (target * pos.maxScrollExtent).clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
   }
 
   void _toggleChrome() => setState(() => _chromeVisible = !_chromeVisible);
@@ -463,6 +540,14 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
               initialY: prefs.autoScrollButtonY,
               onMoved: prefs.setAutoScrollButtonPos,
             ),
+          // Read-aloud puck: only in the tree while TTS is active (the puck
+          // itself hides otherwise), parked where the user dragged it.
+          NovelTtsPuck(
+            controller: _tts,
+            initialX: prefs.ttsButtonX,
+            initialY: prefs.ttsButtonY,
+            onMoved: prefs.setTtsButtonPos,
+          ),
         ],
       ),
     );
@@ -854,6 +939,9 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
       _autoScroll.stop();
       return;
     }
+    // The two hands-free modes never run together — hearing the chapter
+    // while the page creeps on its own desyncs both.
+    _tts.stop();
     if (prefs.novelPaginated) {
       _autoScroll.start(
         advancePage: () => _pageController.nextPage(
@@ -954,6 +1042,26 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
                               ),
                             ),
                           ),
+                  ),
+                  // Read aloud: the novel analogue of the player's play button.
+                  // Accent while active so the state reads at a glance; the
+                  // floating puck carries pause/stop from there.
+                  ListenableBuilder(
+                    listenable: _tts,
+                    builder: (context, _) => IconButton(
+                      tooltip: 'Read aloud',
+                      icon: Icon(
+                        !_tts.isActive
+                            ? Icons.record_voice_over_rounded
+                            : (_tts.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded),
+                        color: _tts.isActive
+                            ? AppColors.accent
+                            : Colors.white,
+                      ),
+                      onPressed: _text == null ? null : _toggleTts,
+                    ),
                   ),
                   // Novel-only: the one setting people change mid-read.
                   IconButton(
@@ -1462,6 +1570,125 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
                                   apply(() => prefs.setOverscrollChapter(v)),
                             ),
                           ),
+                        readerSheetSection('Read aloud'),
+                        readerSheetGroup([
+                          readerSheetRow(
+                            icon: Icons.record_voice_over_rounded,
+                            label: 'Read aloud',
+                            trailing: ListenableBuilder(
+                              listenable: _tts,
+                              builder: (context, _) => Switch(
+                                value: _tts.isActive,
+                                activeThumbColor: AppColors.accent,
+                                onChanged: (v) {
+                                  if (v) {
+                                    _toggleTts();
+                                  } else {
+                                    _tts.stop();
+                                  }
+                                },
+                              ),
+                            ),
+                            child: ListenableBuilder(
+                              listenable: _tts,
+                              builder: (context, _) {
+                                final status = !_tts.hasContent
+                                    ? 'Open a chapter to start listening.'
+                                    : _tts.isActive
+                                    ? 'Paragraph ${_tts.index + 1} of ${_tts.count}'
+                                    : '${_tts.count} paragraphs ready';
+                                return Text(
+                                  status,
+                                  style: AppText.caption.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          readerSheetRow(
+                            icon: Icons.speed_rounded,
+                            label: 'Speech rate',
+                            trailing: Text(
+                              '${prefs.ttsRate.toStringAsFixed(1)}×',
+                              style: AppText.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            child: Slider(
+                              value: prefs.ttsRate.clamp(0.5, 2.0),
+                              min: 0.5,
+                              max: 2.0,
+                              activeColor: AppColors.accent,
+                              onChanged: (v) => apply(() {
+                                unawaited(prefs.setTtsRate(v));
+                                _tts.refreshSettings();
+                              }),
+                            ),
+                          ),
+                          readerSheetRow(
+                            icon: Icons.tune_rounded,
+                            label: 'Pitch',
+                            trailing: Text(
+                              prefs.ttsPitch.toStringAsFixed(1),
+                              style: AppText.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            child: Slider(
+                              value: prefs.ttsPitch.clamp(0.5, 2.0),
+                              min: 0.5,
+                              max: 2.0,
+                              activeColor: AppColors.accent,
+                              onChanged: (v) => apply(() {
+                                unawaited(prefs.setTtsPitch(v));
+                                _tts.refreshSettings();
+                              }),
+                            ),
+                          ),
+                          readerSheetRow(
+                            icon: Icons.person_rounded,
+                            label: 'Voice',
+                            trailing: Text(
+                              _ttsVoiceLabel(prefs),
+                              style: AppText.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            onTap: () => showNovelTtsVoiceSheet(
+                              context: ctx,
+                              controller: _tts,
+                              prefs: prefs,
+                              onPicked: () {
+                                setSheetState(() {});
+                                if (mounted) setState(() {});
+                              },
+                            ),
+                          ),
+                          readerSheetRow(
+                            icon: Icons.skip_next_rounded,
+                            label: 'Auto-read next chapter',
+                            trailing: Switch(
+                              value: prefs.ttsAutoAdvance,
+                              activeThumbColor: AppColors.accent,
+                              onChanged: (v) =>
+                                  apply(() => prefs.setTtsAutoAdvance(v)),
+                            ),
+                          ),
+                          readerSheetRow(
+                            icon: Icons.follow_the_signs_rounded,
+                            label: 'Scroll follows speech',
+                            trailing: Switch(
+                              value: prefs.ttsFollowScroll,
+                              activeThumbColor: AppColors.accent,
+                              onChanged: (v) {
+                                apply(() => prefs.setTtsFollowScroll(v));
+                                // Re-anchor so enabling mid-chapter doesn't
+                                // yank the page back to an old paragraph.
+                                _ttsFollowedIndex = _tts.index;
+                              },
+                            ),
+                          ),
                         ]),
                         readerSheetSection('Comfort'),
                         readerSheetGroup([
@@ -1495,6 +1722,14 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
     'system' => context.l10n.system,
     _ => 'Inter',
   };
+
+  /// Short display name for the picked TTS voice — full engine names
+  /// (`en-US-language`, `com.apple…`) would blow out the settings row.
+  String _ttsVoiceLabel(ReaderPrefs prefs) {
+    final name = prefs.ttsVoice;
+    if (name.isEmpty) return 'Default';
+    return name.length <= 18 ? name : '${name.substring(0, 18)}…';
+  }
 
   Widget _themeSwatch(String id, bool selected, VoidCallback onTap) {
     final theme = _readerTheme(id);

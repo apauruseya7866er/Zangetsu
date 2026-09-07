@@ -271,9 +271,15 @@
             <data android:scheme="upi"/>
         </intent>
         <!-- System speech recogniser — TV voice search resolves this intent
-             (package visibility on Android 11+). -->
+              (package visibility on Android 11+). -->
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
+        </intent>
+        <!-- System TTS engines — flutter_tts engine/voice queries resolve
+              them on Android 11+ (package visibility). No permission needed:
+              speaking uses the OS TextToSpeech service, like Reikai does. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>
