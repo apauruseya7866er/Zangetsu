@@ -219,7 +219,7 @@ class _NovelTtsVoiceSheetState extends State<_NovelTtsVoiceSheet> {
                         icon: Icons.settings_voice_rounded,
                         label: e['label'] ?? e['name']!,
                         trailing: widget.prefs.ttsEngine == e['name']
-                            ? const Icon(
+                            ? Icon(
                                 Icons.check_rounded,
                                 color: AppColors.accent,
                               )
@@ -264,7 +264,7 @@ class _NovelTtsVoiceSheetState extends State<_NovelTtsVoiceSheet> {
                     icon: Icons.record_voice_over_rounded,
                     label: 'Default',
                     trailing: widget.prefs.ttsVoice.isEmpty
-                        ? const Icon(
+                        ? Icon(
                             Icons.check_rounded,
                             color: AppColors.accent,
                           )
@@ -282,7 +282,7 @@ class _NovelTtsVoiceSheetState extends State<_NovelTtsVoiceSheet> {
                       icon: Icons.person_rounded,
                       label: v['name']!,
                       trailing: widget.prefs.ttsVoice == v['name']
-                          ? const Icon(
+                          ? Icon(
                               Icons.check_rounded,
                               color: AppColors.accent,
                             )

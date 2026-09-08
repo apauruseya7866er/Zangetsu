@@ -262,7 +262,7 @@ class NovelTtsController extends ChangeNotifier {
       }
       engine.setStartHandler(() {});
       engine.setCompletionHandler(_onUtteranceDone);
-      engine.setCancelHandler((_) {});
+      engine.setCancelHandler(() {});
       engine.setErrorHandler((_) {
         // An engine error mid-chapter: stop rather than spin through every
         // remaining paragraph failing the same way.

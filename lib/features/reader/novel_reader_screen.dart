@@ -1570,6 +1570,7 @@ class _NovelReaderScreenState extends State<NovelReaderScreen>
                                   apply(() => prefs.setOverscrollChapter(v)),
                             ),
                           ),
+                        ]),
                         readerSheetSection('Read aloud'),
                         readerSheetGroup([
                           readerSheetRow(
