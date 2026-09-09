@@ -11,10 +11,32 @@
 
 ## 2026-09-07 — Novel reader read-aloud (TTS), modeled on Reikai
 
-**AI assistance:** fully drafted by AI (Muse Spark via OpenCode), not yet
-human-tested. No Flutter toolchain exists on this machine, so `flutter pub
-get`, `flutter analyze`, and `flutter test` have NOT been run — the owner must
-run them (see Verification) before shipping.
+**AI assistance:** fully drafted by AI (Muse Spark via OpenCode), then verified
+with a real toolchain (see Verification). No Reikai code copied.
+
+**Toolchain (installed 2026-09-08 on this machine):**
+
+- Flutter 3.47.2 stable → `C:\Users\James\flutter\flutter` (on User PATH)
+- Android cmdline-tools (build `13114758`) → `%LOCALAPPDATA%\Android\Sdk`
+- `flutter config --jdk-dir` → Temurin JDK 21 (Gradle 8.14 rejects the
+  Java 25 that was first on PATH)
+- Note: ProtonVPN was active and its DNS flapped, forcing several Gradle
+  retries (`No such host` / timeouts on Maven Central). Retrying was enough.
+
+**Verification (ran 2026-09-08):**
+
+- `flutter pub get` — ok (`+ flutter_tts 4.2.5`)
+- `flutter analyze <tts files>` — **No issues found** (repo-wide run shows
+  only pre-existing infos/warnings)
+- `flutter test test/reading/novel_tts_text_test.dart` — **12/12 pass**;
+  all other pure unit tests in `test/reading/` pass too
+- Widget tests in `test/features/reader/novel_reader_test.dart` fail on this
+  machine with `quickjs_c_bridge.dll` missing — **proven pre-existing** by
+  running the same test on the pristine pre-TTS commit (identical failure).
+- `flutter build apk --release` — **ok**,
+  `build/app/outputs/flutter-apk/app-release.apk` (78.5MB, debug-signed)
+
+**Revert:** `git revert <commit>` — or per-file,
 
 **Reference:** https://github.com/unseensnick/Reikai (native Android/Kotlin,
 not Flutter). Studied its TTS end-to-end (cloned to temp during research):
@@ -79,16 +101,7 @@ reimplementation against `flutter_tts`; credited in `NOTICE.md` per
 4. TTS ↔ video/audio focus (media_kit) unhandled beyond mutual exclusion
    with auto-scroll — novel reader plays no media, stop-on-dispose covers it.
 
-**Verification (REQUIRED — not run here, no Flutter/Dart toolchain):**
-
-```powershell
-flutter pub get
-flutter analyze
-flutter test test/reading/novel_tts_text_test.dart
-flutter test test/features/reader/
-```
-
-Manual QA on device: open a novel chapter → bottom-bar speaker → speech
+**Remaining manual QA (on device — not yet done):** open a novel chapter → bottom-bar speaker → speech
 starts; puck appears (tap pause, long-press stop, drag to move); settings →
 Read aloud → rate/pitch/voice/auto-advance/follow toggles; last paragraph +
 auto-advance → next chapter auto-reads; chapter change/dispose silences it.
